@@ -6,6 +6,7 @@ import os
 import glob
 import shutil
 import threading
+from time import sleep
 import requests
 import img2pdf
 from bs4 import BeautifulSoup
@@ -15,11 +16,15 @@ source = [
     "http://www.mangareader.net/"
 ]
 
+lock = threading.Lock()
+
 class Downloader:
     # This class contains the methods used to scrape the mangatown website and download the images
 
     def __init__(self):
         self.session = requests.Session()
+        a = requests.adapters.HTTPAdapter(pool_maxsize=200, max_retries=3)
+        self.session.mount('https://', a)
         self.session.headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.109 Safari/537.36"}
 
         requests.packages.urllib3.disable_warnings()  # turn off SSL warnings
@@ -40,23 +45,25 @@ class Downloader:
         threads = []
 
         # visit each chapter link; skip pdfs already converted
-        for item in mangalist:
-            if os.path.exists(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf"):
-                print(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
-                continue
-            if chaplist[i] in item['href'][2:-1].split("/")[-1]:
+        for i in chaplist:
+
+            item = mangalist[int(i)+1]
+
+            #if os.path.exists(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf"):
+                #print(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
+                # continue
 
                 # Multithreaded downloading
-                thread = threading.Thread(target=self.visit_chapter, 
-                    args=(source[0] + item['href'][2:].split("/",2)[2], manganame,))
-                thread.start()
-                threads.append(thread)
-                i += 1
-                if i == len(chaplist):
-                    break
+
+            # self.visit_chapter(source[0] + item['href'][2:].split("/",2)[2], manganame)
+
+            thread = threading.Thread(target=self.visit_chapter, 
+                args=(source[0] + item['href'][2:].split("/",2)[2], manganame,))
+            threads.append(thread)
         
-        # Finish the threads
-        [thread.join() for thread in threads]
+        # Fix so that until each thread has finished downloading
+        [ t.start() for t in threads ]
+        [ t.join() for t in threads ]
 
     def visit_chapter(self, url, manganame):
 
@@ -72,7 +79,10 @@ class Downloader:
 
             # Each page except last one which is a featured page
             for item in pagelist[:-1]:
-                self.visit_page(source[0] + item['value'][2:].split("/",2)[2], manganame + "/" + url.split("/")[-2])
+
+                # Lock resource
+                with lock:
+                    self.visit_page(source[0] + item['value'][2:].split("/",2)[2], manganame + "/" + url.split("/")[-2])
             
             # Convert images in folder to PDF
             self.make_pdf(manganame + "/" + url.split("/")[-2])
@@ -82,6 +92,7 @@ class Downloader:
         req = self.session.get(url, verify=False)
         if req.status_code == 200:
             soup = BeautifulSoup(req.text, 'lxml')
+
             # Find img links in the page url
             self.download_image(soup.find('img')['src'], dirname)
 
@@ -114,7 +125,8 @@ class Downloader:
         with open(directory.split("/")[0] + "/" + pdfname, "wb") as f:
             f.write(img2pdf.convert(imagelist))
         
-        print("Finished " + directory.split("/")[0] + "/" + pdfname)
+        with lock:
+            print("Finished " + directory.split("/")[0] + "/" + pdfname)
 
         # Removes folder with images
         if os.path.exists(directory):
@@ -141,7 +153,7 @@ def main():
     # manga = "Yamada Kun to 7 Nin no Majo"
     linkname = manga.lower().replace(" ", "_")
     num = input("Enter chapter range: ")
-    # num = "28-35"
+    # num = "83-87"
     chapterlist = num.split(",")
     finallist = []
 

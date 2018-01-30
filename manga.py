@@ -2,10 +2,11 @@ try:
     from urlparse import urljoin
 except ImportError:
     from urllib.parse import urljoin
-import requests
 import os
 import glob
 import shutil
+import threading
+import requests
 import img2pdf
 from bs4 import BeautifulSoup
 
@@ -23,7 +24,7 @@ class Downloader:
 
         requests.packages.urllib3.disable_warnings()  # turn off SSL warnings
 
-    def visit_main_url(self, url, manganame):
+    def visit_main_url(self, url, manganame, chaplist):
 
         content = self.session.get(url, verify=False).content
         soup = BeautifulSoup(content, "lxml")
@@ -32,12 +33,30 @@ class Downloader:
 
         mangalist.reverse()
 
+        # index for chapter list
+        i = 0
+
+        # threads array
+        threads = []
+
         # visit each chapter link; skip pdfs already converted
         for item in mangalist:
             if os.path.exists(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf"):
                 print(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
                 continue
-            self.visit_chapter(source[0] + item['href'][2:].split("/",2)[2], manganame)
+            if chaplist[i] in item['href'][2:-1].split("/")[-1]:
+
+                # Multithreaded downloading
+                thread = threading.Thread(target=self.visit_chapter, 
+                    args=(source[0] + item['href'][2:].split("/",2)[2], manganame,))
+                thread.start()
+                threads.append(thread)
+                i += 1
+                if i == len(chaplist):
+                    break
+        
+        # Finish the threads
+        [thread.join() for thread in threads]
 
     def visit_chapter(self, url, manganame):
 
@@ -95,6 +114,8 @@ class Downloader:
         with open(directory.split("/")[0] + "/" + pdfname, "wb") as f:
             f.write(img2pdf.convert(imagelist))
         
+        print("Finished " + directory.split("/")[0] + "/" + pdfname)
+
         # Removes folder with images
         if os.path.exists(directory):
             shutil.rmtree(directory)
@@ -117,9 +138,24 @@ def mangareader(url: str):
 def main():
     download = Downloader()
     manga = input("Enter manga name: ")
+    # manga = "Yamada Kun to 7 Nin no Majo"
     linkname = manga.lower().replace(" ", "_")
+    num = input("Enter chapter range: ")
+    # num = "28-35"
+    chapterlist = num.split(",")
+    finallist = []
+
+    # Translate input to a range of chapters
+    for i in range(0,len(chapterlist)):
+
+        # checks if there is a - in current string
+        if "-" in chapterlist[i]:
+            [finallist.append(str(chapter)) for chapter in list(range(int(chapterlist[i].split("-")[0]), int(chapterlist[i].split("-")[1])+1))]
+        else:
+            finallist.append(chapterlist[i])
+
     download.make_directory(manga)
-    download.visit_main_url(source[0] + linkname, manga)
+    download.visit_main_url(source[0] + linkname, manga, finallist)
     # mangareader(source[1] + "yamada-kun-to-7-nin-no-majo")
 
 if __name__ == '__main__':

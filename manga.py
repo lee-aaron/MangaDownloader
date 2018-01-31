@@ -38,27 +38,48 @@ class Downloader:
 
         mangalist.reverse()
 
-        # index for chapter list
-        i = 0
-
+        finallist = []
         # threads array
         threads = []
 
-        # visit each chapter link; skip pdfs already converted
+        # visit each chapter link; skip pdfs already converted            
         for i in chaplist:
 
-            item = mangalist[int(i)+1]
+            item = mangalist[round(float(i))+1]
 
-            #if os.path.exists(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf"):
-                #print(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
-                # continue
+            if i not in item['href'][2:].split("/")[-2]:
 
-                # Multithreaded downloading
+                index = round(float(i))+1
 
-            # self.visit_chapter(source[0] + item['href'][2:].split("/",2)[2], manganame)
+                while index < len(mangalist)-1 and i not in mangalist[index]['href'][2:].split("/")[-2]:
+                    index += 1
 
+                tempitem = mangalist[index]
+
+                if "." in item['href'][2:].split("/")[-2]:
+                    if os.path.exists(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf"):
+                        print(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
+                    else:
+                        finallist.append(source[0] + item['href'][2:].split("/",2)[2])
+
+                if os.path.exists(manganame + "/" + tempitem['href'][2:-1].split("/")[-1] + ".pdf"):
+                    print(manganame + "/" + tempitem['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
+                    continue
+
+                finallist.append(source[0] + tempitem['href'][2:].split("/",2)[2])
+            
+            if os.path.exists(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf"):
+                print(manganame + "/" + item['href'][2:-1].split("/")[-1] + ".pdf" + " already downloaded")
+                continue
+            
+            finallist.append(source[0] + item['href'][2:].split("/",2)[2])
+
+        finallist = list(set(finallist))
+
+        # Multithreaded downloading
+        for item in finallist:
             thread = threading.Thread(target=self.visit_chapter, 
-                args=(source[0] + item['href'][2:].split("/",2)[2], manganame,))
+                args=(item, manganame,))
             threads.append(thread)
         
         # Fix so that until each thread has finished downloading
@@ -125,14 +146,13 @@ class Downloader:
         with open(directory.split("/")[0] + "/" + pdfname, "wb") as f:
             f.write(img2pdf.convert(imagelist))
         
-        with lock:
-            print("Finished " + directory.split("/")[0] + "/" + pdfname)
+        print("Finished " + directory.split("/")[0] + "/" + pdfname)
 
         # Removes folder with images
         if os.path.exists(directory):
             shutil.rmtree(directory)
 
-def mangareader(url: str):
+def mangareader(url):
     # TODO: implement support for mangareader
     req = requests.get(url, timeout=10, verify=False)
 
@@ -150,10 +170,10 @@ def mangareader(url: str):
 def main():
     download = Downloader()
     manga = input("Enter manga name: ")
-    # manga = "Yamada Kun to 7 Nin no Majo"
+    #manga = "Yamada Kun to 7 Nin No Majo"
     linkname = manga.lower().replace(" ", "_")
     num = input("Enter chapter range: ")
-    # num = "83-87"
+    #num = "93.5-100"
     chapterlist = num.split(",")
     finallist = []
 
@@ -162,7 +182,14 @@ def main():
 
         # checks if there is a - in current string
         if "-" in chapterlist[i]:
-            [finallist.append(str(chapter)) for chapter in list(range(int(chapterlist[i].split("-")[0]), int(chapterlist[i].split("-")[1])+1))]
+            if "." in chapterlist[i].split("-")[1]:
+                [finallist.append(str(chapter)) for chapter in list(range(round(float(chapterlist[i].split("-")[0])), round(float(chapterlist[i].split("-")[1])+1)))]
+                finallist.append(chapterlist[i].split("-")[1])
+            elif "." in chapterlist[i].split("-")[0]:
+                finallist.append(chapterlist[i].split("-")[0])
+                [finallist.append(str(chapter)) for chapter in list(range(round(float(chapterlist[i].split("-")[0]) + 1), round(float(chapterlist[i].split("-")[1])+1)))]
+            else :
+                [finallist.append(str(chapter)) for chapter in list(range(int(chapterlist[i].split("-")[0]), int(chapterlist[i].split("-")[1])+1))]
         else:
             finallist.append(chapterlist[i])
 
